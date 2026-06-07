@@ -9,21 +9,22 @@ const zig_sgf = @import("zig_sgf");
 const example_fragment =
     \\(;
     \\FF[4]
-    // \\CA[UTF-8]
-    // \\GM[1]
-    // \\DT[2026-05-25]
-    // \\PC[OGS: https://online-go.com/game/87302596]
-    // \\GN[Friendly Match]
-    // \\PB[saucepan]
-    // \\PW[GeRui]
-    // \\BR[2d]
-    // \\WR[1d]
-    // \\TM[30]OT[5x10 byo-yomi]
-    // \\RE[W+11.5]
-    // \\SZ[19]
-    // \\KM[6.5]
-    // \\RU[Japanese]
-    // \\;B[pd]
+    \\CA[UTF-8]
+    \\GM[1]
+    \\DT[2026-05-25]
+    \\PC[OGS: https://online-go.com/game/87302596]
+    \\GN[Friendly Match]
+    \\PB[saucepan]
+    \\PW[GeRui]
+    \\BR[2d]
+    \\WR[1d]
+    \\TM[30]OT[5x10 byo-yomi]
+    \\RE[W+11.5]
+    \\SZ[19]
+    \\KM[6.5]
+    \\RU[Japanese]
+    \\GN[友谊赛]
+    \\;B[pd]
     // \\(;W[dp]
     // \\C[GeRui: hi
     // \\]
@@ -380,8 +381,8 @@ const parsePropIdent = mecha.combine(.{
 });
 
 const rawPropertyStruct = struct {
-    ident: []void,
-    // values: ,
+    ident: []const u8,
+    values: [][]const u8,
 };
 
 const parseProperty = mecha.combine(.{
@@ -392,10 +393,10 @@ const parseProperty = mecha.combine(.{
     parseIgnoreWhitespace,
 });
 
-fn parsedPropertyToStruct(result: anytype) rawPropertyStruct {
+fn parsedPropertyToStruct(result: struct { []const u8, [][]const u8 }) rawPropertyStruct {
     return .{
         .ident = result[0],
-        // .values = result[1:],
+        .values = result[1],
     };
 }
 
@@ -403,50 +404,81 @@ const parseNode = mecha.combine(.{
     parseIgnoreWhitespace,
     mecha.ascii.char(';').discard(),
     parseIgnoreWhitespace,
-    mecha.many(parseProperty, .{}),
-    // mecha.many(parseProperty.map(parsedPropertyToStruct), .{}),
+    // mecha.many(parseProperty, .{}),
+    mecha.many(parseProperty.map(parsedPropertyToStruct), .{}),
     parseIgnoreWhitespace,
 });
 
+const rawNodeStruct = struct {
+    properties: []rawPropertyStruct,
+};
+fn parsedNodeToStruct(result: []rawPropertyStruct) rawNodeStruct {
+    return .{
+        .properties = result,
+    };
+}
+
 const parseSequence = mecha.combine(.{
     parseIgnoreWhitespace,
-    mecha.many(parseNode, .{ .min = 1 }),
+    mecha.many(parseNode.map(parsedNodeToStruct), .{ .min = 1 }),
     parseIgnoreWhitespace,
 });
+
+const rawSequenceStruct = struct {
+    nodes: []rawNodeStruct,
+};
+fn parsedSequenceToStruct(result: []rawNodeStruct) rawSequenceStruct {
+    return .{
+        .nodes = result,
+    };
+}
 
 const parseGameTree = mecha.combine(.{
     parseIgnoreWhitespace,
     mecha.ascii.char('(').discard(),
     parseIgnoreWhitespace,
-    parseSequence,
+    parseSequence.map(parsedSequenceToStruct),
+    parseIgnoreWhitespace,
+    mecha.many(mecha.ref(recursiveParseGameTree), .{}),
     parseIgnoreWhitespace,
     mecha.ascii.char(')').discard(),
     parseIgnoreWhitespace,
-});
-
-const rawGameTreeStruct = struct {
-    game_tree: []void,
-};
-
-fn parsedGameTreeToStruct(result: anytype) rawGameTreeStruct {
-    return .{
-        .game_tree = &result,
-    };
+}).map(parsedGameTreeToStruct);
+fn recursiveParseGameTree() mecha.Parser(rawGameTreeStruct) {
+    return parseGameTree;
 }
 
-// const RawGameTree = struct {};
-
-// const RawNode = struct {};
+const rawGameTreeStruct = struct {
+    sequence: rawSequenceStruct,
+    sub_game_trees: []rawGameTreeStruct,
+};
+fn parsedGameTreeToStruct(result: struct { rawSequenceStruct, []rawGameTreeStruct }) rawGameTreeStruct {
+    return .{
+        .sequence = result[0],
+        .sub_game_trees = result[1],
+    };
+}
 
 pub fn main(init: std.process.Init) !void {
     // This is appropriate for anything that lives as long as the process.
     const allocator: std.mem.Allocator = init.arena.allocator();
 
-    const a = (try rgb.parse(allocator, "#aabbcc")).value.ok;
-    std.debug.print("{any}\n", .{a});
+    // const a = (try rgb.parse(allocator, "#aabbcc")).value.ok;
+    // std.debug.print("{any}\n", .{a});
 
     const parsedSgf = (try parseGameTree.parse(allocator, example_fragment)).value.ok;
     std.debug.print("{any}\n", .{parsedSgf});
+
+    for (parsedSgf.sequence.nodes) |node| {
+        std.debug.print("Node:\n", .{});
+        for (node.properties) |property| {
+            std.debug.print("  {s} =", .{property.ident});
+            for (property.values) |value| {
+                std.debug.print(" \"{s}\"", .{value});
+            }
+            std.debug.print("\n", .{});
+        }
+    }
 
     // inline for (parsedSgf) |item| {
     //     std.debug.print("{any}\n", .{item});
