@@ -1,7 +1,7 @@
 const std = @import("std");
 const mecha = @import("mecha");
 
-const RawPropertyStruct = struct {
+pub const RawPropertyStruct = struct {
     ident: []const u8,
     values: [][]const u8,
     fn fromParsedProperty(result: struct { []const u8, [][]const u8 }) RawPropertyStruct {
@@ -17,7 +17,7 @@ const RawPropertyStruct = struct {
     }
 };
 
-const RawNodeStruct = struct {
+pub const RawNodeStruct = struct {
     properties: []RawPropertyStruct,
     fn fromParsedNode(result: []RawPropertyStruct) RawNodeStruct {
         return .{
@@ -32,7 +32,7 @@ const RawNodeStruct = struct {
     }
 };
 
-const RawSequenceStruct = struct {
+pub const RawSequenceStruct = struct {
     nodes: []RawNodeStruct,
     fn fromParsedSequence(result: []RawNodeStruct) RawSequenceStruct {
         return .{
@@ -47,7 +47,7 @@ const RawSequenceStruct = struct {
     }
 };
 
-const RawGameTreeStruct = struct {
+pub const RawGameTreeStruct = struct {
     sequence: RawSequenceStruct,
     sub_game_trees: []RawGameTreeStruct,
     fn fromParsedGameTree(result: struct { RawSequenceStruct, []RawGameTreeStruct }) RawGameTreeStruct {
