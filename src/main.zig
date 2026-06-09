@@ -2,6 +2,10 @@ const std = @import("std");
 
 const parseRaw = @import("parse_raw.zig");
 
+const SgfError = error{
+    NodeAlreadyHasParent,
+};
+
 const PropertyType = enum {
     black_move,
     white_move,
@@ -64,59 +68,80 @@ const Property = struct {
     pub fn deinit(this: *Property, allocator: std.mem.Allocator) void {
         allocator.free(this.name);
 
-        for (this.values) |value| {
+        for (this.values.items) |value| {
             allocator.free(value);
         }
         this.values.deinit(allocator);
     }
 };
 
-const Node = struct {
+const SgfNode = struct {
     properties: std.ArrayList(Property),
-    pub fn init() Node {
-        return .{ .properties = .empty };
+    parent: ?*SgfNode,
+    children: std.ArrayList(*SgfNode),
+
+    pub fn init(allocator: std.mem.Allocator) !*SgfNode {
+        const this: *SgfNode = try allocator.create(SgfNode);
+        this.properties = .empty;
+        this.parent = null;
+        this.children = .empty;
+        return this;
     }
-    pub fn fromRawNode(raw: parseRaw.RawNodeStruct, allocator: std.mem.Allocator) !Node {
-        var node: Node = Node.init();
-        for (raw.properties) |property| {
+
+    pub fn initFromRawNode(allocator: std.mem.Allocator, raw_node: parseRaw.RawNodeStruct) !*SgfNode {
+        const node = try SgfNode.init(allocator);
+
+        for (raw_node.properties) |property| {
             try node.properties.append(allocator, try Property.fromRawProperty(property, allocator));
         }
         return node;
     }
-    pub fn deinit(this: *Node, allocator: std.mem.Allocator) void {
-        for (this.properties) |property| {
+
+    pub fn addChild(this: *SgfNode, allocator: std.mem.Allocator, child: *SgfNode) !void {
+        if (child.parent != null) {
+            return SgfError.NodeAlreadyHasParent;
+        }
+
+        try this.children.append(allocator, child);
+    }
+
+    pub fn deinit(this: *SgfNode, allocator: std.mem.Allocator) void {
+        for (this.properties.items) |*property| {
             property.deinit(allocator);
         }
         this.properties.deinit(allocator);
+        this.children.deinit(allocator);
+
+        allocator.destroy(this);
+    }
+
+    pub fn deinitTree(this: *SgfNode, allocator: std.mem.Allocator) void {
+        for (this.children.items) |child| {
+            child.deinitTree(allocator);
+        }
+        this.deinit(allocator);
     }
 };
 
-const GameTree = struct {
-    nodes: std.ArrayList(Node),
-    sub_game_trees: bool = false,
-
-    pub fn init() GameTree {
-        return .{ .nodes = .empty };
+fn parseSgf(allocator: std.mem.Allocator, raw: parseRaw.RawGameTreeStruct) !*SgfNode {
+    // First add all the nodes in the game tree to the initial graph
+    const root_node: *SgfNode = try SgfNode.initFromRawNode(allocator, raw.sequence.nodes[0]);
+    var prev_node: *SgfNode = root_node;
+    for (raw.sequence.nodes) |raw_node| {
+        const sgf_node: *SgfNode = try SgfNode.initFromRawNode(allocator, raw_node);
+        try prev_node.addChild(allocator, sgf_node);
+        prev_node = sgf_node;
     }
 
-    pub fn fromRawGameTree(raw: parseRaw.RawGameTreeStruct, allocator: std.mem.Allocator) !GameTree {
-        var game_tree: GameTree = GameTree.init();
-        for (raw.sequence.nodes) |node| {
-            try game_tree.nodes.append(allocator, try Node.fromRawNode(node, allocator));
-        }
-        return game_tree;
+    const last_node: *SgfNode = prev_node;
+
+    // Each subtree now becomes a child of the last node
+    for (raw.sub_game_trees) |sub_game_tree| {
+        const sub_root_node: *SgfNode = try parseSgf(allocator, sub_game_tree);
+        try last_node.addChild(allocator, sub_root_node);
     }
 
-    pub fn deinit(this: *GameTree, allocator: std.mem.Allocator) void {
-        for (this.nodes) |node| {
-            node.deinit(allocator);
-        }
-        this.nodes.deinit(allocator);
-    }
-};
-
-fn parseSgf(allocator: std.mem.Allocator, raw: parseRaw.RawGameTreeStruct) !GameTree {
-    return GameTree.fromRawGameTree(raw, allocator);
+    return root_node;
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -138,8 +163,10 @@ pub fn main(init: std.process.Init) !void {
     const raw_sgf = (try parseRaw.parseSgf(allocator, contents));
     defer raw_sgf.deinit(allocator);
 
-    const game_tree = parseSgf(allocator, raw_sgf);
-    std.debug.print("{any}\n", .{game_tree});
+    var root_node: *SgfNode = try parseSgf(allocator, raw_sgf);
+    defer root_node.deinitTree(allocator);
 
     raw_sgf.pretty_print(.{});
+
+    std.debug.print("{any}\n", .{root_node});
 }
