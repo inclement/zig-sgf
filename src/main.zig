@@ -100,6 +100,12 @@ const SgfNode = struct {
         return node;
     }
 
+    /// Perform checks on the validity of every node in the tree
+    pub fn validateTree(this: *SgfNode) !void {
+        _ = this;
+        // TODO
+    }
+
     pub fn addChild(this: *SgfNode, allocator: std.mem.Allocator, child: *SgfNode) !void {
         if (child.parent != null) {
             return SgfError.NodeAlreadyHasParent;
@@ -185,6 +191,45 @@ fn parseSgf(allocator: std.mem.Allocator, raw: parseRaw.RawGameTreeStruct) !*Sgf
     return root_node;
 }
 
+fn debugPrintIndent(count: u32) void {
+    if (count == 0) {
+        return;
+    }
+    for (0..(count - 1)) |_| {
+        std.debug.print(" ", .{});
+    }
+}
+
+fn debugPrintNodeTree(root: *SgfNode, indent_count: u32) void {
+    var cur_node: *SgfNode = root;
+    while (true) {
+        debugPrintIndent(indent_count);
+        std.debug.print("Node->{d}\n", .{
+            cur_node.children.items.len,
+        });
+        for (cur_node.properties.items) |property| {
+            debugPrintIndent(indent_count + 4);
+            std.debug.print("{s}: ", .{property.name});
+            for (property.values.items) |value| {
+                std.debug.print(" \"{s}\"", .{value});
+            }
+            std.debug.print("\n", .{});
+        }
+
+        if (cur_node.children.items.len == 0) {
+            break;
+        }
+
+        if (cur_node.children.items.len > 1) {
+            for (cur_node.children.items[1..]) |child| {
+                debugPrintNodeTree(child, indent_count + 4);
+            }
+        }
+
+        cur_node = cur_node.children.items[0];
+    }
+}
+
 pub fn main(init: std.process.Init) !void {
     // This is appropriate for anything that lives as long as the process.
     const allocator: std.mem.Allocator = init.arena.allocator();
@@ -210,4 +255,5 @@ pub fn main(init: std.process.Init) !void {
     // raw_sgf.pretty_print(.{});
 
     std.debug.print("{any}\n", .{root_node});
+    debugPrintNodeTree(root_node, 0);
 }
