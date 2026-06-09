@@ -4,6 +4,9 @@ const parseRaw = @import("parse_raw.zig");
 
 const SgfError = error{
     NodeAlreadyHasParent,
+    NodeHasNoParent,
+    NodeIsNotChild,
+    ChildParentInvalid,
 };
 
 const PropertyType = enum {
@@ -105,6 +108,44 @@ const SgfNode = struct {
         try this.children.append(allocator, child);
     }
 
+    /// Remove this node from its parent. Sets this node's parent to null and removes it from the parent children
+    pub fn cut(this: *SgfNode) !void {
+        if (this.parent == null) {
+            return SgfError.NodeHasNoParent;
+        }
+
+        this.parent.removeChild(this);
+        std.debug.assert(this.parent == null); // this should have been handled by the parent
+    }
+
+    pub fn removeChild(this: *SgfNode, removing_child: *SgfNode) !*SgfNode {
+        if (removing_child.parent != this) {
+            return SgfError.ChildParentInvalid;
+        }
+
+        for (this.children.items, 0..) |child, index| {
+            if (child == removing_child) {
+                this.children.orderedRemove(index);
+                break;
+            }
+        } else {
+            return SgfError.NodeIsNotChild;
+        }
+
+        removing_child.parent = null;
+        return removing_child;
+    }
+
+    // pub fn treeLength(this: *SgfNode) u32 {
+    //     var count: u32 = 1;
+    //     var node = this;
+    //     while (node.children.items.len > 0) {
+    //         count += 1;
+    //         node = node.children.items[0];
+    //     }
+    //     return count;
+    // }
+
     pub fn deinit(this: *SgfNode, allocator: std.mem.Allocator) void {
         for (this.properties.items) |*property| {
             property.deinit(allocator);
@@ -166,7 +207,7 @@ pub fn main(init: std.process.Init) !void {
     var root_node: *SgfNode = try parseSgf(allocator, raw_sgf);
     defer root_node.deinitTree(allocator);
 
-    raw_sgf.pretty_print(.{});
+    // raw_sgf.pretty_print(.{});
 
     std.debug.print("{any}\n", .{root_node});
 }
