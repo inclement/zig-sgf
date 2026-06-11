@@ -3,12 +3,12 @@ const std = @import("std");
 const Io = std.Io;
 
 const parseRaw = @import("parse_raw.zig");
-// const sgfNodes = @import("sgf_nodes.zig");
+const sgfNodes = @import("sgf_nodes.zig");
 const mecha = @import("mecha");
 
 test {
     std.testing.refAllDecls(@This());
-    // _ = sgfNodes;
+    _ = sgfNodes;
     _ = mecha;
     _ = parseRaw;
 }
