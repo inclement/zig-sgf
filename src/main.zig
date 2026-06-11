@@ -2,6 +2,7 @@ const std = @import("std");
 
 const parseRaw = @import("parse_raw.zig");
 const sgfNodes = @import("sgf_nodes.zig");
+const mecha = @import("mecha");
 
 pub fn main(init: std.process.Init) !void {
     const allocator: std.mem.Allocator = init.arena.allocator();
@@ -21,7 +22,7 @@ pub fn main(init: std.process.Init) !void {
     const raw_sgf = (try parseRaw.parseSgf(allocator, contents));
     defer raw_sgf.deinit(allocator);
 
-    var root_node: *sgfNodes.SgfNode = try sgfNodes.parseSgf(allocator, raw_sgf);
+    var root_node: *sgfNodes.SgfNode = try sgfNodes.parseRawGameTree(allocator, raw_sgf);
     defer root_node.deinitTree(allocator);
 
     // raw_sgf.pretty_print(.{});

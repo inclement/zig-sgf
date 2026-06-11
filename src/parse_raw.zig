@@ -3,8 +3,8 @@ const mecha = @import("mecha");
 
 pub const RawPropertyStruct = struct {
     ident: []const u8,
-    values: [][]const u8,
-    fn fromParsedProperty(result: struct { []const u8, [][]const u8 }) RawPropertyStruct {
+    values: [][]u8,
+    fn fromParsedProperty(result: struct { []const u8, [][]u8 }) RawPropertyStruct {
         return .{
             .ident = result[0],
             .values = result[1],
@@ -13,7 +13,12 @@ pub const RawPropertyStruct = struct {
 
     pub fn deinit(this: *const RawPropertyStruct, allocator: std.mem.Allocator) void {
         allocator.free(this.ident);
+        for (this.values) |item| {
+            allocator.free(item);
+        }
         allocator.free(this.values);
+        // _ = this;
+        // _ = allocator;
     }
 };
 
@@ -29,6 +34,7 @@ pub const RawNodeStruct = struct {
         for (this.properties) |property| {
             property.deinit(allocator);
         }
+        allocator.free(this.properties);
     }
 };
 
@@ -44,6 +50,7 @@ pub const RawSequenceStruct = struct {
         for (this.nodes) |node| {
             node.deinit(allocator);
         }
+        allocator.free(this.nodes);
     }
 };
 
@@ -58,11 +65,12 @@ pub const RawGameTreeStruct = struct {
     }
 
     pub fn deinit(this: *const RawGameTreeStruct, allocator: std.mem.Allocator) void {
+        this.sequence.deinit(allocator);
+
         for (this.sub_game_trees) |game_tree| {
             game_tree.deinit(allocator);
         }
-
-        this.sequence.deinit(allocator);
+        allocator.free(this.sub_game_trees);
     }
 
     pub fn pretty_print(self: RawGameTreeStruct, extras: struct { depth: u32 = 0 }) void {
@@ -88,24 +96,28 @@ pub const RawGameTreeStruct = struct {
     }
 };
 
-const parseIgnoreWhitespace = mecha.many(mecha.ascii.whitespace, .{}).discard();
-const parseCValueType = mecha.oneOf(.{
-    // TODO: allow escaped close bracket
-    // mecha.combine(.{
-    //     mecha.ascii.char('\\'),
-    //     mecha.ascii.char(']'),
-    // }),
-    mecha.ascii.not(mecha.ascii.char(']')),
-});
+const parseIgnoreWhitespace = mecha.many(mecha.ascii.whitespace.discard(), .{}).discard();
+// I think this could work with the peek functionality in https://github.com/Hejsil/mecha/pull/80 ?
+// const parseCValueType = mecha.oneOf(.{
+//     // TODO: allow escaped close bracket
+//     // mecha.combine(.{
+//     //     mecha.ascii.char('\\'),
+//     //     mecha.ascii.char(']'),
+//     // }),
+//     mecha.ascii.not(mecha.ascii.char(']')),
+// });
+const parseCValueType = mecha.ascii.not(mecha.ascii.char(']'));
 const parsePropValue = mecha.combine(.{
     parseIgnoreWhitespace,
     mecha.ascii.char('[').discard(),
-    mecha.asStr(mecha.many(parseCValueType, .{})),
+    // mecha.asStr(mecha.many(parseCValueType, .{})),
+    mecha.many(parseCValueType, .{}),
     mecha.ascii.char(']').discard(),
     parseIgnoreWhitespace,
 });
 const parsePropIdent = mecha.combine(.{
-    mecha.asStr(mecha.many(mecha.ascii.upper, .{ .min = 1 })),
+    // mecha.asStr(mecha.many(mecha.ascii.upper, .{ .min = 1 })),
+    mecha.many(mecha.ascii.upper, .{ .min = 1 }),
 });
 const parseProperty = mecha.combine(.{
     parseIgnoreWhitespace,
@@ -147,7 +159,58 @@ fn debugPrintNSpaces(num: u32) void {
     }
 }
 
-pub fn parseSgf(allocator: std.mem.Allocator, text: []u8) !RawGameTreeStruct {
+pub fn parseSgf(allocator: std.mem.Allocator, text: []const u8) !RawGameTreeStruct {
     // TODO Add Collection level of parsing
-    return (try parseGameTree.parse(allocator, text)).value.ok;
+    const result: mecha.Result(RawGameTreeStruct) = try parseGameTree.parse(allocator, text);
+    return result.value.ok;
+}
+
+test "basic parse" {
+    const branched_sgf_string: []const u8 = "(;B[de]\n)";
+    // const game_tree = try parseSgf(std.testing.allocator, "(;B[de])");
+    const game_tree = try parseSgf(std.testing.allocator, branched_sgf_string);
+    defer game_tree.deinit(std.testing.allocator);
+}
+
+test "complex parse" {
+    const branched_sgf_string: []const u8 =
+        \\(;B[de]
+        \\FF[4]CA[UTF-8]AP[CGoban:3]ST[2]
+        \\RU[AGA]SZ[19]KM[7.50]
+        \\PW[White]PB[Black]
+        \\(;B[qe]
+        \\(;W[pb]
+        \\;B[nc])
+        \\(;W[rg]
+        \\(;B[sc]
+        \\;W[rj])
+        \\(;B[sd]
+        \\;B[qk])))
+        \\(;B[qf]
+        \\(;W[rf]
+        \\(;B[rg]
+        \\(;B[qg]
+        \\;B[nc])
+        \\(;B[pg]
+        \\;B[nc]))
+        \\(;B[pe]
+        \\;W[rg]))
+        \\(;W[qe]
+        \\(;B[rg]
+        \\;W[ob])
+        \\(;B[re]
+        \\(;W[rd]
+        \\;B[qg])
+        \\(;W[pb]
+        \\;W[ld]))))
+        \\(;B[pe]
+        \\;W[rf]))
+    ;
+
+    const game_tree = try parseSgf(std.testing.allocator, branched_sgf_string);
+    defer game_tree.deinit(std.testing.allocator);
+}
+
+test "pass" {
+    try std.testing.expect(true);
 }
