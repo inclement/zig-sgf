@@ -90,7 +90,7 @@ const StonePlacement = struct {
 const Property = struct {
     name: []const u8,
     values: std.ArrayList([]const u8),
-    pub fn init(allocator: std.mem.Allocator, raw_name: []const u8, raw_values: [][]const u8) !Property {
+    pub fn init(allocator: std.mem.Allocator, raw_name: []const u8, raw_values: [][]u8) !Property {
         const name_mem = try allocator.alloc(u8, raw_name.len);
         const name_slice: []u8 = name_mem;
         @memcpy(name_slice, raw_name);
@@ -253,7 +253,7 @@ pub const SgfNode = struct {
     }
 };
 
-pub fn parseSgf(allocator: std.mem.Allocator, raw: parseRaw.RawGameTreeStruct) !*SgfNode {
+pub fn parseRawGameTree(allocator: std.mem.Allocator, raw: parseRaw.RawGameTreeStruct) !*SgfNode {
     // First add all the nodes in the game tree to the initial graph
     const root_node: *SgfNode = try SgfNode.initFromRawNode(allocator, raw.sequence.nodes[0]);
     var prev_node: *SgfNode = root_node;
@@ -267,11 +267,18 @@ pub fn parseSgf(allocator: std.mem.Allocator, raw: parseRaw.RawGameTreeStruct) !
 
     // Each subtree now becomes a child of the last node
     for (raw.sub_game_trees) |sub_game_tree| {
-        const sub_root_node: *SgfNode = try parseSgf(allocator, sub_game_tree);
+        const sub_root_node: *SgfNode = try parseRawGameTree(allocator, sub_game_tree);
         try last_node.addChild(allocator, sub_root_node);
     }
 
     return root_node;
+}
+
+pub fn parseSgfString(allocator: std.mem.Allocator, string: []const u8) !*SgfNode {
+    const game_tree = try parseRaw.parseSgf(allocator, string);
+    // defer game_tree.deinit(allocator);
+
+    return parseRawGameTree(allocator, game_tree);
 }
 
 fn debugPrintIndent(count: u32) void {
@@ -313,3 +320,14 @@ pub fn debugPrintNodeTree(root: *SgfNode, indent_count: u32) void {
         cur_node = cur_node.children.items[0];
     }
 }
+
+test {
+    std.testing.refAllDecls(@This());
+}
+
+// test "sgf to SgfNodes" {
+//     const root_node = parseSgfString(std.testing.allocator, "(;B[aa];W[bb])");
+//     std.debug.print("Root node: {any}\n", .{root_node});
+
+//     try std.testing.expect(true);
+// }

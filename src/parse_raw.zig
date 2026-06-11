@@ -166,9 +166,7 @@ pub fn parseSgf(allocator: std.mem.Allocator, text: []const u8) !RawGameTreeStru
 }
 
 test "basic parse" {
-    const branched_sgf_string: []const u8 = "(;B[de]\n)";
-    // const game_tree = try parseSgf(std.testing.allocator, "(;B[de])");
-    const game_tree = try parseSgf(std.testing.allocator, branched_sgf_string);
+    const game_tree = try parseSgf(std.testing.allocator, "(;B[ab] )");
     defer game_tree.deinit(std.testing.allocator);
 }
 
