@@ -152,6 +152,11 @@ const parseGameTree = mecha.combine(.{
 fn recursiveParseGameTree() mecha.Parser(RawGameTreeStruct) {
     return parseGameTree;
 }
+const parseCollection = mecha.combine(.{
+    parseIgnoreWhitespace,
+    mecha.many(parseGameTree, .{ .min = 1 }),
+    parseIgnoreWhitespace,
+});
 
 fn debugPrintNSpaces(num: u32) void {
     for (0..num) |_| {
@@ -161,8 +166,9 @@ fn debugPrintNSpaces(num: u32) void {
 
 pub fn parseSgf(allocator: std.mem.Allocator, text: []const u8) !RawGameTreeStruct {
     // TODO Add Collection level of parsing
-    const result: mecha.Result(RawGameTreeStruct) = try parseGameTree.parse(allocator, text);
-    return result.value.ok;
+    const result: mecha.Result([]RawGameTreeStruct) = try parseCollection.parse(allocator, text);
+    defer allocator.free(result.value.ok);
+    return result.value.ok[0];
 }
 
 test "basic parse" {
@@ -207,8 +213,4 @@ test "complex parse" {
 
     const game_tree = try parseSgf(std.testing.allocator, branched_sgf_string);
     defer game_tree.deinit(std.testing.allocator);
-}
-
-test "pass" {
-    try std.testing.expect(true);
 }
