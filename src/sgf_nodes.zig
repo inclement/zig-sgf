@@ -222,11 +222,11 @@ pub const SgfNode = struct {
             return SgfError.NodeHasNoParent;
         }
 
-        _ = try this.parent.?.removeChild(this);
+        try this.parent.?.removeChild(this);
         std.debug.assert(this.parent == null); // this should have been handled by the parent
     }
 
-    pub fn removeChild(this: *SgfNode, removing_child: *SgfNode) !*SgfNode {
+    pub fn removeChild(this: *SgfNode, removing_child: *SgfNode) !void {
         if (removing_child.parent != this) {
             return SgfError.ChildParentInvalid;
         }
@@ -241,7 +241,6 @@ pub const SgfNode = struct {
         }
 
         removing_child.parent = null;
-        return removing_child;
     }
 
     // pub fn treeLength(this: *SgfNode) u32 {
@@ -388,6 +387,18 @@ test "complex branched sgf to SgfNodes" {
     defer root_node.deinitTree(std.testing.allocator);
 }
 
+test "read property" {
+    const root_node = try parseSgfString(std.testing.allocator, "(;XZ[test_value 1][second_value 2])");
+    defer root_node.deinitTree(std.testing.allocator);
+
+    try std.testing.expectEqual(null, root_node.readProperty("FF"));
+
+    const values = root_node.readProperty("XZ").?;
+    try std.testing.expectEqual(2, values.items.len);
+    try std.testing.expectEqualStrings("test_value 1", values.items[0]);
+    try std.testing.expectEqualStrings("second_value 2", values.items[1]);
+}
+
 test "read move" {
     const root_node = try parseSgfString(std.testing.allocator, "(;B[ab];W[cd])");
     defer root_node.deinitTree(std.testing.allocator);
@@ -418,8 +429,28 @@ test "cut" {
 
     try child.cut();
     defer child.deinitTree(std.testing.allocator);
-
     try std.testing.expect(child.parent == null);
+
+    try std.testing.expectError(SgfError.NodeHasNoParent, root_node.cut());
+}
+
+test "remove child" {
+    const root_node = try parseSgfString(std.testing.allocator, "(;B[ab](;W[cd])(;B[ef])(;W[gh]))");
+    defer root_node.deinitTree(std.testing.allocator);
+    try root_node.validateTree();
+
+    try std.testing.expectEqual(root_node.children.items.len, 3);
+    const child = root_node.children.items[1];
+
+    try root_node.removeChild(child);
+    defer child.deinitTree(std.testing.allocator);
+    try std.testing.expect(child.parent == null);
+
+    try std.testing.expectError(SgfError.ChildParentInvalid, root_node.removeChild(root_node));
+
+    const second_root_node = try parseSgfString(std.testing.allocator, "(;W[zz];B[yy])");
+    defer second_root_node.deinitTree(std.testing.allocator);
+    try std.testing.expectError(SgfError.ChildParentInvalid, root_node.removeChild(second_root_node.children.items[0]));
 }
 
 test "validate" {
@@ -428,4 +459,20 @@ test "validate" {
 
     try std.testing.expectError(ValidationError.BlackAndWhiteMovesInSameNode, root_node.validate());
     try std.testing.expectError(ValidationError.BlackAndWhiteMovesInSameNode, root_node.validateTree());
+}
+
+test "add child" {
+    const root_node_1 = try parseSgfString(std.testing.allocator, "(;B[ab];W[cd])");
+    defer root_node_1.deinitTree(std.testing.allocator);
+
+    const root_node_2 = try parseSgfString(std.testing.allocator, "(;B[xz])");
+
+    try root_node_1.addChild(std.testing.allocator, root_node_2);
+    try std.testing.expectEqual(root_node_1.children.items[1], root_node_2);
+    try std.testing.expectEqual(root_node_1, root_node_2.parent);
+
+    try std.testing.expectError(
+        SgfError.NodeAlreadyHasParent,
+        root_node_1.addChild(std.testing.allocator, root_node_1.children.items[0]),
+    );
 }
