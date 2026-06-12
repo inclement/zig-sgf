@@ -271,7 +271,7 @@ pub const SgfNode = struct {
     }
 };
 
-pub fn parseRawGameTree(allocator: std.mem.Allocator, raw: parseRaw.RawGameTreeStruct) !*SgfNode {
+fn parseRawGameTree(allocator: std.mem.Allocator, raw: parseRaw.RawGameTreeStruct) !*SgfNode {
     // First add all the nodes in the game tree to the initial graph
     const root_node: *SgfNode = try SgfNode.initFromRawNode(allocator, raw.sequence.nodes[0]);
     var prev_node: *SgfNode = root_node;
@@ -356,8 +356,21 @@ test {
 }
 
 test "parse sgf to nodes" {
-    const root_node = try parseSgfStringFirstGameTree(std.testing.allocator, "(;B[aa];W[bb])");
-    defer root_node.deinitTree(std.testing.allocator);
+    const root_nodes = try parseSgfString(std.testing.allocator, "(;B[aa];W[bb])");
+    defer std.testing.allocator.free(root_nodes);
+    for (root_nodes) |root_node| {
+        defer root_node.deinitTree(std.testing.allocator);
+    }
+    try std.testing.expectEqual(1, root_nodes.len);
+}
+
+test "parse multiple game trees" {
+    const root_nodes = try parseSgfString(std.testing.allocator, "(;B[aa];W[bb])(;W[cc];B[dd])");
+    defer std.testing.allocator.free(root_nodes);
+    for (root_nodes) |root_node| {
+        defer root_node.deinitTree(std.testing.allocator);
+    }
+    try std.testing.expectEqual(2, root_nodes.len);
 }
 
 test "parse complex branched sgf to nodes" {
