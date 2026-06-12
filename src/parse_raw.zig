@@ -180,26 +180,35 @@ fn debugPrintNSpaces(num: u32) void {
     }
 }
 
-pub fn parseSgfToRawCollection(allocator: std.mem.Allocator, text: []const u8) !RawCollectionStruct {
+pub fn parseSgf(allocator: std.mem.Allocator, text: []const u8) !RawCollectionStruct {
     const result: mecha.Result(RawCollectionStruct) = try parseCollection.parse(allocator, text);
     return result.value.ok;
 }
 
-pub fn parseSgfToSingleGameTree(allocator: std.mem.Allocator, text: []const u8) !RawGameTreeStruct {
+pub fn parseSingleGameTree(allocator: std.mem.Allocator, text: []const u8) !RawGameTreeStruct {
     const result: mecha.Result(RawGameTreeStruct) = try parseGameTree.parse(allocator, text);
     return result.value.ok;
 }
 
 test "basic parse" {
-    const collection: RawCollectionStruct = try parseSgfToRawCollection(std.testing.allocator, "(;B[ab] ;Q[cd])");
+    const collection: RawCollectionStruct = try parseSgf(std.testing.allocator, "(;B[ab] ;Q[cd])");
     defer collection.deinit(std.testing.allocator);
     try std.testing.expectEqual(collection.game_trees.len, 1);
+    try std.testing.expectEqual(2, collection.game_trees[0].sequence.nodes.len);
+}
+
+test "parse single game tree" {
+    const game_tree: RawGameTreeStruct = try parseSingleGameTree(std.testing.allocator, "(;B[ab] ;Q[cd])");
+    defer game_tree.deinit(std.testing.allocator);
+    try std.testing.expectEqual(2, game_tree.sequence.nodes.len);
 }
 
 test "multiple game trees" {
-    const collection = try parseSgfToRawCollection(std.testing.allocator, "(;B[ab])(;W[cd])");
+    const collection = try parseSgf(std.testing.allocator, "(;B[ab])(;W[cd];B[ff])");
     defer collection.deinit(std.testing.allocator);
-    try std.testing.expectEqual(collection.game_trees.len, 2);
+    try std.testing.expectEqual(2, collection.game_trees.len);
+    try std.testing.expectEqual(1, collection.game_trees[0].sequence.nodes.len);
+    try std.testing.expectEqual(2, collection.game_trees[1].sequence.nodes.len);
 }
 
 test "complex parse" {
@@ -237,6 +246,7 @@ test "complex parse" {
         \\;W[rf]))
     ;
 
-    const collection = try parseSgfToRawCollection(std.testing.allocator, branched_sgf_string);
+    const collection = try parseSgf(std.testing.allocator, branched_sgf_string);
     defer collection.deinit(std.testing.allocator);
+    try std.testing.expectEqual(collection.game_trees.len, 1);
 }

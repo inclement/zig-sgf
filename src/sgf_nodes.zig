@@ -293,7 +293,7 @@ pub fn parseRawGameTree(allocator: std.mem.Allocator, raw: parseRaw.RawGameTreeS
 }
 
 pub fn parseSgfString(allocator: std.mem.Allocator, string: []const u8) !*SgfNode {
-    const game_tree = try parseRaw.parseSgfToSingleGameTree(allocator, string);
+    const game_tree = try parseRaw.parseSingleGameTree(allocator, string);
     defer game_tree.deinit(allocator);
 
     return parseRawGameTree(allocator, game_tree);
