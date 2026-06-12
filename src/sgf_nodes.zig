@@ -292,11 +292,23 @@ pub fn parseRawGameTree(allocator: std.mem.Allocator, raw: parseRaw.RawGameTreeS
     return root_node;
 }
 
-pub fn parseSgfString(allocator: std.mem.Allocator, string: []const u8) !*SgfNode {
-    const game_tree = try parseRaw.parseSingleGameTree(allocator, string);
-    defer game_tree.deinit(allocator);
+pub fn parseSgfString(allocator: std.mem.Allocator, string: []const u8) ![]*SgfNode {
+    const collection = try parseRaw.parseSgf(allocator, string);
+    defer collection.deinit(allocator);
 
-    return parseRawGameTree(allocator, game_tree);
+    const root_nodes: []*SgfNode = try allocator.alloc(*SgfNode, collection.game_trees.len);
+    for (collection.game_trees, 0..) |game_tree, index| {
+        root_nodes[index] = try parseRawGameTree(allocator, game_tree);
+    }
+
+    return root_nodes;
+}
+
+pub fn parseSgfStringFirstGameTree(allocator: std.mem.Allocator, string: []const u8) !*SgfNode {
+    const root_nodes: []*SgfNode = try parseSgfString(allocator, string);
+    defer allocator.free(root_nodes);
+
+    return root_nodes[0];
 }
 
 fn debugPrintIndent(count: u32) void {
@@ -344,7 +356,7 @@ test {
 }
 
 test "parse sgf to nodes" {
-    const root_node = try parseSgfString(std.testing.allocator, "(;B[aa];W[bb])");
+    const root_node = try parseSgfStringFirstGameTree(std.testing.allocator, "(;B[aa];W[bb])");
     defer root_node.deinitTree(std.testing.allocator);
 }
 
@@ -383,12 +395,12 @@ test "parse complex branched sgf to nodes" {
         \\;W[rf]))
     ;
 
-    const root_node = try parseSgfString(std.testing.allocator, branched_sgf_string);
+    const root_node = try parseSgfStringFirstGameTree(std.testing.allocator, branched_sgf_string);
     defer root_node.deinitTree(std.testing.allocator);
 }
 
 test "read property" {
-    const root_node = try parseSgfString(std.testing.allocator, "(;XZ[test_value 1][second_value 2])");
+    const root_node = try parseSgfStringFirstGameTree(std.testing.allocator, "(;XZ[test_value 1][second_value 2])");
     defer root_node.deinitTree(std.testing.allocator);
 
     try std.testing.expectEqual(null, root_node.readProperty("FF"));
@@ -400,7 +412,7 @@ test "read property" {
 }
 
 test "read move" {
-    const root_node = try parseSgfString(std.testing.allocator, "(;B[ab];W[cd])");
+    const root_node = try parseSgfStringFirstGameTree(std.testing.allocator, "(;B[ab];W[cd])");
     defer root_node.deinitTree(std.testing.allocator);
 
     const node1 = root_node;
@@ -413,14 +425,14 @@ test "read move" {
 }
 
 test "children" {
-    const root_node = try parseSgfString(std.testing.allocator, "(;B[ab](;W[cd])(;B[ef])(;W[gh]))");
+    const root_node = try parseSgfStringFirstGameTree(std.testing.allocator, "(;B[ab](;W[cd])(;B[ef])(;W[gh]))");
     defer root_node.deinitTree(std.testing.allocator);
 
     try std.testing.expectEqual(root_node.children.items.len, 3);
 }
 
 test "cut" {
-    const root_node = try parseSgfString(std.testing.allocator, "(;B[ab](;W[cd])(;B[ef])(;W[gh]))");
+    const root_node = try parseSgfStringFirstGameTree(std.testing.allocator, "(;B[ab](;W[cd])(;B[ef])(;W[gh]))");
     defer root_node.deinitTree(std.testing.allocator);
     try root_node.validateTree();
 
@@ -435,7 +447,7 @@ test "cut" {
 }
 
 test "remove child" {
-    const root_node = try parseSgfString(std.testing.allocator, "(;B[ab](;W[cd])(;B[ef])(;W[gh]))");
+    const root_node = try parseSgfStringFirstGameTree(std.testing.allocator, "(;B[ab](;W[cd])(;B[ef])(;W[gh]))");
     defer root_node.deinitTree(std.testing.allocator);
     try root_node.validateTree();
 
@@ -448,13 +460,13 @@ test "remove child" {
 
     try std.testing.expectError(SgfError.ChildParentInvalid, root_node.removeChild(root_node));
 
-    const second_root_node = try parseSgfString(std.testing.allocator, "(;W[zz];B[yy])");
+    const second_root_node = try parseSgfStringFirstGameTree(std.testing.allocator, "(;W[zz];B[yy])");
     defer second_root_node.deinitTree(std.testing.allocator);
     try std.testing.expectError(SgfError.ChildParentInvalid, root_node.removeChild(second_root_node.children.items[0]));
 }
 
 test "validate" {
-    const root_node = try parseSgfString(std.testing.allocator, "(;B[ab]W[cd])");
+    const root_node = try parseSgfStringFirstGameTree(std.testing.allocator, "(;B[ab]W[cd])");
     defer root_node.deinitTree(std.testing.allocator);
 
     try std.testing.expectError(ValidationError.BlackAndWhiteMovesInSameNode, root_node.validate());
@@ -462,10 +474,10 @@ test "validate" {
 }
 
 test "add child" {
-    const root_node_1 = try parseSgfString(std.testing.allocator, "(;B[ab];W[cd])");
+    const root_node_1 = try parseSgfStringFirstGameTree(std.testing.allocator, "(;B[ab];W[cd])");
     defer root_node_1.deinitTree(std.testing.allocator);
 
-    const root_node_2 = try parseSgfString(std.testing.allocator, "(;B[xz])");
+    const root_node_2 = try parseSgfStringFirstGameTree(std.testing.allocator, "(;B[xz])");
 
     try root_node_1.addChild(std.testing.allocator, root_node_2);
     try std.testing.expectEqual(root_node_1.children.items[1], root_node_2);
