@@ -293,7 +293,7 @@ pub fn parseRawGameTree(allocator: std.mem.Allocator, raw: parseRaw.RawGameTreeS
 }
 
 pub fn parseSgfString(allocator: std.mem.Allocator, string: []const u8) !*SgfNode {
-    const game_tree = try parseRaw.parseSgf(allocator, string);
+    const game_tree = try parseRaw.parseSgfToSingleGameTree(allocator, string);
     defer game_tree.deinit(allocator);
 
     return parseRawGameTree(allocator, game_tree);
@@ -343,12 +343,12 @@ test {
     std.testing.refAllDecls(@This());
 }
 
-test "sgf to SgfNodes" {
+test "parse sgf to nodes" {
     const root_node = try parseSgfString(std.testing.allocator, "(;B[aa];W[bb])");
     defer root_node.deinitTree(std.testing.allocator);
 }
 
-test "complex branched sgf to SgfNodes" {
+test "parse complex branched sgf to nodes" {
     const branched_sgf_string: []const u8 =
         \\(;B[de]
         \\FF[4]CA[UTF-8]AP[CGoban:3]ST[2]

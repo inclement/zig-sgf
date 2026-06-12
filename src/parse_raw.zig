@@ -96,6 +96,22 @@ pub const RawGameTreeStruct = struct {
     }
 };
 
+pub const RawCollectionStruct = struct {
+    game_trees: []RawGameTreeStruct,
+    fn fromParsedCollection(result: []RawGameTreeStruct) RawCollectionStruct {
+        return .{
+            .game_trees = result,
+        };
+    }
+    pub fn deinit(this: *const RawCollectionStruct, allocator: std.mem.Allocator) void {
+        for (this.game_trees) |game_tree| {
+            game_tree.deinit(allocator);
+        }
+
+        allocator.free(this.game_trees);
+    }
+};
+
 const parseIgnoreWhitespace = mecha.many(mecha.ascii.whitespace.discard(), .{}).discard();
 // I think this could work with the peek functionality in https://github.com/Hejsil/mecha/pull/80 ?
 // const parseCValueType = mecha.oneOf(.{
@@ -156,7 +172,7 @@ const parseCollection = mecha.combine(.{
     parseIgnoreWhitespace,
     mecha.many(parseGameTree, .{ .min = 1 }),
     parseIgnoreWhitespace,
-});
+}).map(RawCollectionStruct.fromParsedCollection);
 
 fn debugPrintNSpaces(num: u32) void {
     for (0..num) |_| {
@@ -164,16 +180,26 @@ fn debugPrintNSpaces(num: u32) void {
     }
 }
 
-pub fn parseSgf(allocator: std.mem.Allocator, text: []const u8) !RawGameTreeStruct {
-    // TODO Add Collection level of parsing
-    const result: mecha.Result([]RawGameTreeStruct) = try parseCollection.parse(allocator, text);
-    defer allocator.free(result.value.ok);
-    return result.value.ok[0];
+pub fn parseSgfToRawCollection(allocator: std.mem.Allocator, text: []const u8) !RawCollectionStruct {
+    const result: mecha.Result(RawCollectionStruct) = try parseCollection.parse(allocator, text);
+    return result.value.ok;
+}
+
+pub fn parseSgfToSingleGameTree(allocator: std.mem.Allocator, text: []const u8) !RawGameTreeStruct {
+    const result: mecha.Result(RawGameTreeStruct) = try parseGameTree.parse(allocator, text);
+    return result.value.ok;
 }
 
 test "basic parse" {
-    const game_tree = try parseSgf(std.testing.allocator, "(;B[ab] )");
-    defer game_tree.deinit(std.testing.allocator);
+    const collection: RawCollectionStruct = try parseSgfToRawCollection(std.testing.allocator, "(;B[ab] ;Q[cd])");
+    defer collection.deinit(std.testing.allocator);
+    try std.testing.expectEqual(collection.game_trees.len, 1);
+}
+
+test "multiple game trees" {
+    const collection = try parseSgfToRawCollection(std.testing.allocator, "(;B[ab])(;W[cd])");
+    defer collection.deinit(std.testing.allocator);
+    try std.testing.expectEqual(collection.game_trees.len, 2);
 }
 
 test "complex parse" {
@@ -211,6 +237,6 @@ test "complex parse" {
         \\;W[rf]))
     ;
 
-    const game_tree = try parseSgf(std.testing.allocator, branched_sgf_string);
-    defer game_tree.deinit(std.testing.allocator);
+    const collection = try parseSgfToRawCollection(std.testing.allocator, branched_sgf_string);
+    defer collection.deinit(std.testing.allocator);
 }
