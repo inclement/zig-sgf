@@ -6,6 +6,8 @@ const parseRaw = @import("parse_raw.zig");
 const sgfNodes = @import("sgf_nodes.zig");
 const mecha = @import("mecha");
 
+pub const parseSgfString = sgfNodes.parseSgfString;
+
 test {
     std.testing.refAllDecls(@This());
     _ = sgfNodes;

@@ -19,20 +19,12 @@ pub fn main(init: std.process.Init) !void {
     );
     defer allocator.free(contents);
 
-    const raw_sgf = (try parseRaw.parseSgf(allocator, contents));
-    defer raw_sgf.deinit(allocator);
+    const root_nodes: []*sgfNodes.SgfNode = try sgfNodes.parseSgfString(allocator, contents);
+    defer sgfNodes.deinitRootNodeTreesAndContainer(allocator, root_nodes);
 
-    var root_node: *sgfNodes.SgfNode = try sgfNodes.parseRawGameTree(allocator, raw_sgf);
-    defer root_node.deinitTree(allocator);
+    std.debug.print("Read {d} game trees from {s}\n", .{ root_nodes.len, args[1] });
 
-    // raw_sgf.pretty_print(.{});
+    const root_node: *sgfNodes.SgfNode = root_nodes[0];
 
-    std.debug.print("{any}\n", .{root_node});
     sgfNodes.debugPrintNodeTree(root_node, 0);
-
-    var cur_node = root_node;
-    while (cur_node.next()) |next| {
-        cur_node = next;
-        std.debug.print("Move: {any}\n", .{cur_node.readMove()});
-    }
 }

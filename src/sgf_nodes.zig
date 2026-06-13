@@ -311,6 +311,13 @@ pub fn parseSgfStringFirstGameTree(allocator: std.mem.Allocator, string: []const
     return root_nodes[0];
 }
 
+pub fn deinitRootNodeTreesAndContainer(allocator: std.mem.Allocator, root_nodes: []*SgfNode) void {
+    for (root_nodes) |root_node| {
+        root_node.deinitTree(allocator);
+    }
+    allocator.free(root_nodes);
+}
+
 fn debugPrintIndent(count: u32) void {
     if (count == 0) {
         return;
@@ -357,19 +364,14 @@ test {
 
 test "parse sgf to nodes" {
     const root_nodes = try parseSgfString(std.testing.allocator, "(;B[aa];W[bb])");
-    defer std.testing.allocator.free(root_nodes);
-    for (root_nodes) |root_node| {
-        defer root_node.deinitTree(std.testing.allocator);
-    }
+    defer deinitRootNodeTreesAndContainer(std.testing.allocator, root_nodes);
     try std.testing.expectEqual(1, root_nodes.len);
+    try std.testing.expectEqual(1, root_nodes[0].children.items.len);
 }
 
 test "parse multiple game trees" {
     const root_nodes = try parseSgfString(std.testing.allocator, "(;B[aa];W[bb])(;W[cc];B[dd])");
-    defer std.testing.allocator.free(root_nodes);
-    for (root_nodes) |root_node| {
-        defer root_node.deinitTree(std.testing.allocator);
-    }
+    defer deinitRootNodeTreesAndContainer(std.testing.allocator, root_nodes);
     try std.testing.expectEqual(2, root_nodes.len);
 }
 
