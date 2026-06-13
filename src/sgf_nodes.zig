@@ -157,6 +157,46 @@ pub const SgfNode = struct {
         return this.children.items[0]; // TODO add an active variation index?
     }
 
+    /// The index of the node in the linear list of nodes counted from the root
+    /// node. Ignores variations, only counts how many nodes would be moved through from
+    /// the root node to this one in its own variation branches. Note this is not the move
+    /// number as not all nodes necessarily contain moves, plus the move number may be
+    /// specified by SGF property.
+    pub fn nodeIndex(this: *SgfNode) u32 {
+        var count: u32 = 0;
+        var cur_node: *SgfNode = this;
+        while (cur_node.parent != null) {
+            count += 1;
+            cur_node = cur_node.parent.?;
+        }
+        return count;
+    }
+
+    /// The caller is in charge of freeing the returned list
+    pub fn flatBranchList(this: *SgfNode, allocator: std.mem.Allocator) ![]*SgfNode {
+        const num_nodes = this.nodeIndex() + 1;
+        const nodes: []*SgfNode = try allocator.alloc(*SgfNode, num_nodes);
+
+        var index: usize = nodes.len - 1;
+        var cur_node: *SgfNode = this;
+        while (true) {
+            if (index == 0) {
+                std.debug.assert(cur_node.parent == null);
+            }
+
+            nodes[index] = cur_node;
+            if (cur_node.parent) |parent| {
+                cur_node = parent;
+                index -= 1;
+            } else {
+                std.debug.assert(index == 0);
+                break;
+            }
+        }
+
+        return nodes;
+    }
+
     /// Perform checks on the validity of every node in the tree below this one
     pub fn validateTree(this: *SgfNode) !void {
         try this.validate();
@@ -502,4 +542,33 @@ test "add child" {
         SgfError.NodeAlreadyHasParent,
         root_node_1.addChild(std.testing.allocator, root_node_1.children.items[0]),
     );
+}
+
+test "node index" {
+    const root_node = try parseSgfStringFirstGameTree(std.testing.allocator, "(;B[ab];W[cd](;B[ef])(;W[gh])(;W[ij]))");
+    defer root_node.deinitTree(std.testing.allocator);
+
+    try std.testing.expectEqual(0, root_node.nodeIndex());
+    try std.testing.expectEqual(1, root_node.children.items[0].nodeIndex());
+    try std.testing.expectEqual(2, root_node.children.items[0].children.items[0].nodeIndex());
+    try std.testing.expectEqual(2, root_node.children.items[0].children.items[1].nodeIndex());
+    try std.testing.expectEqual(2, root_node.children.items[0].children.items[2].nodeIndex());
+}
+
+test "get nodes list" {
+    const root_node = try parseSgfStringFirstGameTree(std.testing.allocator, "(;B[ab];W[cd](;B[ef])(;W[gh];B[ij]))");
+    defer root_node.deinitTree(std.testing.allocator);
+
+    const node_1_list: []*SgfNode = try root_node.children.items[0].flatBranchList(std.testing.allocator);
+    defer std.testing.allocator.free(node_1_list);
+    try std.testing.expectEqual(2, node_1_list.len);
+    try std.testing.expectEqual(root_node, node_1_list[0]);
+    try std.testing.expectEqual(root_node.children.items[0], node_1_list[1]);
+
+    const node_2_list: []*SgfNode = try root_node.children.items[0].children.items[1].flatBranchList(std.testing.allocator);
+    defer std.testing.allocator.free(node_2_list);
+    try std.testing.expectEqual(3, node_2_list.len);
+    try std.testing.expectEqual(root_node, node_2_list[0]);
+    try std.testing.expectEqual(root_node.children.items[0], node_2_list[1]);
+    try std.testing.expectEqual(root_node.children.items[0].children.items[1], node_2_list[2]);
 }
