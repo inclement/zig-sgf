@@ -1,7 +1,7 @@
 pub const PlayerColour = enum {
+    empty,
     black,
     white,
-    empty,
 };
 
 pub const ParseError = error{
