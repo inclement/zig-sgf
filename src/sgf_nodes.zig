@@ -1,22 +1,23 @@
 const std = @import("std");
 
 const parseRaw = @import("parse_raw.zig");
+const types = @import("types.zig");
 
-const SgfError = error{
+pub const SgfError = error{
     NodeAlreadyHasParent,
     NodeHasNoParent,
     NodeIsNotChild,
     ChildParentInvalid,
     PropertyNotPresent,
     NodeDoesNotDefineMove,
-    InvalidRawCoords,
 };
 
-const ValidationError = error{
+pub const ValidationError = error{
     BlackAndWhiteMovesInSameNode,
 };
 
-const PropertyType = enum {
+// TODO Add an API to get properties by enum value
+pub const PropertyType = enum {
     black_move,
     white_move,
     move_number,
@@ -48,50 +49,12 @@ const PropertyType = enum {
     unparsed,
 };
 
-const PlayerColour = enum {
-    black,
-    white,
+pub const StonePlacement = struct {
+    colour: types.PlayerColour,
+    coords: types.BoardCoords,
 };
 
-const BoardCoords = struct {
-    x: u32,
-    y: u32,
-
-    pub fn fromSgfCoords(string_coords: []const u8) !BoardCoords {
-        if (!(string_coords.len == 2)) {
-            return SgfError.InvalidRawCoords;
-        }
-
-        const x_char: u8 = string_coords[0];
-        var x_coord: u32 = 0;
-        if (x_char >= 'a' and x_char <= 'z') {
-            x_coord = x_char - 'a';
-        } else if (x_char >= 'A' and x_char <= 'Z') {
-            x_coord = x_char - 'A';
-        } else {
-            return SgfError.InvalidRawCoords;
-        }
-
-        const y_char: u8 = string_coords[1];
-        var y_coord: u32 = 0;
-        if (y_char >= 'a' and y_char <= 'z') {
-            y_coord = y_char - 'a';
-        } else if (y_char >= 'A' and y_char <= 'Z') {
-            y_coord = y_char - 'A';
-        } else {
-            return SgfError.InvalidRawCoords;
-        }
-
-        return .{ .x = x_coord, .y = y_coord };
-    }
-};
-
-const StonePlacement = struct {
-    colour: PlayerColour,
-    coords: BoardCoords,
-};
-
-const Property = struct {
+pub const Property = struct {
     name: []const u8,
     values: std.ArrayList([]const u8),
     pub fn init(allocator: std.mem.Allocator, raw_name: []const u8, raw_values: [][]u8) !Property {
@@ -150,11 +113,26 @@ pub const SgfNode = struct {
         return node;
     }
 
+    // True if the node has no children
+    pub fn isLeafNode(this: *SgfNode) bool {
+        return (this.children.items.len == 0);
+    }
+
+    // True if the node has no parent
+    pub fn isRootNode(this: *SgfNode) bool {
+        return (this.parent == null);
+    }
+
     pub fn next(this: *SgfNode) ?*SgfNode {
-        if (this.children.items.len == 0) {
+        if (this.isLeafNode()) {
             return null;
         }
         return this.children.items[0]; // TODO add an active variation index?
+    }
+
+    pub fn previous(this: *SgfNode) ?*SgfNode {
+        // No need to check anything since parent is Optional and we return an Optional
+        return this.parent;
     }
 
     /// The index of the node in the linear list of nodes counted from the root
@@ -172,7 +150,8 @@ pub const SgfNode = struct {
         return count;
     }
 
-    /// The caller is in charge of freeing the returned list
+    /// A slice of nodes from the root node to this, in order. Does not include any
+    /// children of this node. The caller is in charge of freeing the returned list.
     pub fn flatBranchList(this: *SgfNode, allocator: std.mem.Allocator) ![]*SgfNode {
         const num_nodes = this.nodeIndex() + 1;
         const nodes: []*SgfNode = try allocator.alloc(*SgfNode, num_nodes);
@@ -231,15 +210,15 @@ pub const SgfNode = struct {
     pub fn readMove(this: *SgfNode) !?StonePlacement {
         if (this.readProperty(&.{'B'})) |values| {
             return .{
-                .colour = PlayerColour.black,
-                .coords = try BoardCoords.fromSgfCoords(values.items[0]),
+                .colour = types.PlayerColour.black,
+                .coords = try types.BoardCoords.fromSgfCoords(values.items[0]),
             };
         }
 
         if (this.readProperty("W")) |values| {
             return .{
-                .colour = PlayerColour.white,
-                .coords = try BoardCoords.fromSgfCoords(values.items[0]),
+                .colour = types.PlayerColour.white,
+                .coords = try types.BoardCoords.fromSgfCoords(values.items[0]),
             };
         }
 
@@ -471,11 +450,11 @@ test "read move" {
     defer root_node.deinitTree(std.testing.allocator);
 
     const node1 = root_node;
-    const expected_placement_1: StonePlacement = .{ .colour = PlayerColour.black, .coords = .{ .x = 0, .y = 1 } };
+    const expected_placement_1: StonePlacement = .{ .colour = types.PlayerColour.black, .coords = .{ .x = 0, .y = 1 } };
     try std.testing.expectEqual((try node1.readMove()).?, expected_placement_1);
 
     const node2 = root_node.children.items[0];
-    const expected_placement_2: StonePlacement = .{ .colour = PlayerColour.white, .coords = .{ .x = 2, .y = 3 } };
+    const expected_placement_2: StonePlacement = .{ .colour = types.PlayerColour.white, .coords = .{ .x = 2, .y = 3 } };
     try std.testing.expectEqual((try node2.readMove()).?, expected_placement_2);
 }
 
@@ -571,4 +550,33 @@ test "get nodes list" {
     try std.testing.expectEqual(root_node, node_2_list[0]);
     try std.testing.expectEqual(root_node.children.items[0], node_2_list[1]);
     try std.testing.expectEqual(root_node.children.items[0].children.items[1], node_2_list[2]);
+}
+
+test "is root/leaf node" {
+    const root_node = try parseSgfStringFirstGameTree(std.testing.allocator, "(;B[ab];W[cd](;B[ef])(;W[gh];B[ij]))");
+    defer root_node.deinitTree(std.testing.allocator);
+
+    try std.testing.expectEqual(false, root_node.isLeafNode());
+    try std.testing.expectEqual(false, root_node.children.items[0].isLeafNode());
+    try std.testing.expectEqual(true, root_node.children.items[0].children.items[0].isLeafNode());
+    try std.testing.expectEqual(false, root_node.children.items[0].children.items[1].isLeafNode());
+
+    try std.testing.expectEqual(true, root_node.isRootNode());
+    try std.testing.expectEqual(false, root_node.children.items[0].isRootNode());
+    try std.testing.expectEqual(false, root_node.children.items[0].children.items[0].isRootNode());
+    try std.testing.expectEqual(false, root_node.children.items[0].children.items[1].isRootNode());
+}
+
+test "next / previous" {
+    const root_node = try parseSgfStringFirstGameTree(std.testing.allocator, "(;B[ab];W[cd])");
+    defer root_node.deinitTree(std.testing.allocator);
+
+    const node_1 = root_node;
+    const node_2 = root_node.children.items[0];
+
+    try std.testing.expectEqual(null, node_1.previous());
+    try std.testing.expectEqual(node_2, node_1.next());
+
+    try std.testing.expectEqual(node_1, node_2.previous());
+    try std.testing.expectEqual(null, node_2.next());
 }
