@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const sgf_nodes = @import("sgf_nodes.zig");
 const types = @import("types.zig");
 
 const BoardLogicError = error{
@@ -39,6 +40,19 @@ const Board = struct {
         this.clear();
 
         return this;
+    }
+
+    pub fn initFromSgfNode(allocator: std.mem.Allocator, init_node: *sgf_nodes.SgfNode) !*Board {
+        const board: *Board = try Board.init(allocator, try init_node.readBoardSize());
+        const nodes: []*sgf_nodes.SgfNode = try init_node.flatBranchList(allocator);
+        defer allocator.free(nodes);
+
+        for (nodes) |node| {
+            if (try node.readMove()) |move| {
+                try board.playMove(allocator, move.colour, move.coords);
+            }
+        }
+        return board;
     }
 
     pub fn deinit(this: *Board, allocator: std.mem.Allocator) void {
@@ -495,4 +509,18 @@ test "forbid more complex suicide" {
 
     try std.testing.expectEqual(0, board.black_stones_captured);
     try std.testing.expectEqual(0, board.white_stones_captured);
+}
+
+test "init from sgf node" {
+    const root_node = try sgf_nodes.parseSgfStringFirstGameTree(std.testing.allocator, "(;B[ab];W[cd];B[ee])");
+    defer root_node.deinitTree(std.testing.allocator);
+
+    const board = try Board.initFromSgfNode(std.testing.allocator, root_node.next().?.next().?);
+    defer board.deinit(std.testing.allocator);
+    try std.testing.expectEqual(19, board.size);
+
+    try std.testing.expectEqual(types.PlayerColour.black, board.grid[0][1]);
+    try std.testing.expectEqual(types.PlayerColour.white, board.grid[2][3]);
+    try std.testing.expectEqual(types.PlayerColour.black, board.grid[4][4]);
+    try std.testing.expectEqual(types.PlayerColour.empty, board.grid[4][5]);
 }
