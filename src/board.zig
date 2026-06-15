@@ -454,3 +454,45 @@ test "one group spans multiple liberties in capture" {
     try std.testing.expectEqual(0, board.black_stones_captured);
     try std.testing.expectEqual(3, board.white_stones_captured);
 }
+
+test "forbid suicide" {
+    const board: *Board = try Board.init(std.testing.allocator, 9);
+    defer board.deinit(std.testing.allocator);
+
+    try board.playMove(std.testing.allocator, .white, .{ .x = 2, .y = 3 });
+    try board.playMove(std.testing.allocator, .white, .{ .x = 4, .y = 3 });
+    try board.playMove(std.testing.allocator, .white, .{ .x = 3, .y = 2 });
+    try board.playMove(std.testing.allocator, .white, .{ .x = 3, .y = 4 });
+
+    try std.testing.expectError(
+        BoardLogicError.MoveIsSuicide,
+        board.playMove(std.testing.allocator, .black, .{ .x = 3, .y = 3 }),
+    );
+    try std.testing.expectEqual(types.PlayerColour.empty, board.grid[3][3]);
+
+    try std.testing.expectEqual(0, board.black_stones_captured);
+    try std.testing.expectEqual(0, board.white_stones_captured);
+}
+
+test "forbid more complex suicide" {
+    const board: *Board = try Board.init(std.testing.allocator, 9);
+    defer board.deinit(std.testing.allocator);
+
+    try board.playMove(std.testing.allocator, .white, .{ .x = 0, .y = 2 });
+    try board.playMove(std.testing.allocator, .white, .{ .x = 1, .y = 1 });
+    try board.playMove(std.testing.allocator, .white, .{ .x = 2, .y = 0 });
+
+    try board.playMove(std.testing.allocator, .black, .{ .x = 0, .y = 1 });
+    try board.playMove(std.testing.allocator, .black, .{ .x = 1, .y = 0 });
+
+    try std.testing.expectError(
+        BoardLogicError.MoveIsSuicide,
+        board.playMove(std.testing.allocator, .black, .{ .x = 0, .y = 0 }),
+    );
+    try std.testing.expectEqual(types.PlayerColour.empty, board.grid[0][0]);
+    try std.testing.expectEqual(types.PlayerColour.black, board.grid[0][1]);
+    try std.testing.expectEqual(types.PlayerColour.black, board.grid[1][0]);
+
+    try std.testing.expectEqual(0, board.black_stones_captured);
+    try std.testing.expectEqual(0, board.white_stones_captured);
+}
