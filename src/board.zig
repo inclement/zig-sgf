@@ -20,7 +20,7 @@ fn valueInArrayList(comptime T: type, value: T, list: std.ArrayList(T)) bool {
     return false;
 }
 
-const Board = struct {
+pub const Board = struct {
     size: u32,
     grid: [][]types.PlayerColour,
     // allow_suicide: bool = false,
