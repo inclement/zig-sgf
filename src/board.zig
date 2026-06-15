@@ -23,8 +23,8 @@ const Board = struct {
     size: u32,
     grid: [][]types.PlayerColour,
     // allow_suicide: bool = false,
-    white_captures: u32 = 0,
-    black_captures: u32 = 0,
+    white_stones_captured: u32 = 0,
+    black_stones_captured: u32 = 0,
 
     pub fn init(allocator: std.mem.Allocator, size: u32) !*Board {
         const this: *Board = try allocator.create(Board);
@@ -33,6 +33,8 @@ const Board = struct {
         for (0..(size)) |index| {
             this.grid[index] = try allocator.alloc(types.PlayerColour, size);
         }
+        this.white_stones_captured = 0;
+        this.black_stones_captured = 0;
 
         this.clear();
 
@@ -172,10 +174,10 @@ const Board = struct {
                 return BoardLogicError.PointNotOccupied;
             },
             types.PlayerColour.black => {
-                this.black_captures += 1;
+                this.black_stones_captured += 1;
             },
             types.PlayerColour.white => {
-                this.white_captures += 1;
+                this.white_stones_captured += 1;
             },
         }
 
@@ -214,12 +216,15 @@ const Board = struct {
 
         var visited_stones: std.ArrayList(types.BoardCoords) = .empty;
         defer visited_stones.deinit(allocator);
-        try visited_stones.append(allocator, coord);
+
+        std.debug.assert(valueInArrayList(types.BoardCoords, stones_to_check.items[0], stones_to_check));
 
         while (stones_to_check.pop()) |stone_to_check| {
             // For each adjacent coordinate, if it's a free liberty satisfying the
             // condition then we can return, otherwise add it to the lists we're iterating
             // through
+            std.debug.assert(!valueInArrayList(types.BoardCoords, stone_to_check, visited_stones));
+            try visited_stones.append(allocator, stone_to_check);
             const maybe_left_coord = this.leftFrom(stone_to_check);
             if (maybe_left_coord) |left_coord| {
                 if (try this.iterateLibertySearch(allocator, group_colour, left_coord, other_than, &visited_stones, &stones_to_check)) {
@@ -374,4 +379,78 @@ test "simple capture" {
     try std.testing.expectEqual(types.PlayerColour.black, board.grid[3][3]);
     try board.playMove(std.testing.allocator, .white, .{ .x = 3, .y = 4 });
     try std.testing.expectEqual(types.PlayerColour.empty, board.grid[3][3]);
+
+    try std.testing.expectEqual(1, board.black_stones_captured);
+    try std.testing.expectEqual(0, board.white_stones_captured);
+}
+
+test "larger groups capture" {
+    const board: *Board = try Board.init(std.testing.allocator, 9);
+    defer board.deinit(std.testing.allocator);
+
+    try board.playMove(std.testing.allocator, .black, .{ .x = 3, .y = 3 });
+    try board.playMove(std.testing.allocator, .white, .{ .x = 3, .y = 4 });
+    try board.playMove(std.testing.allocator, .black, .{ .x = 4, .y = 3 });
+    try board.playMove(std.testing.allocator, .white, .{ .x = 4, .y = 4 });
+    try board.playMove(std.testing.allocator, .black, .{ .x = 5, .y = 4 });
+    try board.playMove(std.testing.allocator, .white, .{ .x = 7, .y = 7 });
+    try board.playMove(std.testing.allocator, .black, .{ .x = 2, .y = 4 });
+    try board.playMove(std.testing.allocator, .white, .{ .x = 7, .y = 8 });
+    try board.playMove(std.testing.allocator, .black, .{ .x = 3, .y = 5 });
+    try board.playMove(std.testing.allocator, .white, .{ .x = 8, .y = 7 });
+    try std.testing.expectEqual(types.PlayerColour.white, board.grid[3][4]);
+    try std.testing.expectEqual(types.PlayerColour.white, board.grid[4][4]);
+    try board.playMove(std.testing.allocator, .black, .{ .x = 4, .y = 5 });
+    try std.testing.expectEqual(types.PlayerColour.empty, board.grid[3][4]);
+    try std.testing.expectEqual(types.PlayerColour.empty, board.grid[4][4]);
+
+    try std.testing.expectEqual(0, board.black_stones_captured);
+    try std.testing.expectEqual(2, board.white_stones_captured);
+}
+
+test "board-spanning capture" {
+    const board: *Board = try Board.init(std.testing.allocator, 9);
+    defer board.deinit(std.testing.allocator);
+
+    for (0..9) |index| {
+        try board.playMove(std.testing.allocator, .black, .{ .x = 3, .y = @intCast(index) });
+    }
+    for (0..9) |index| {
+        try board.playMove(std.testing.allocator, .white, .{ .x = 2, .y = @intCast(index) });
+        try std.testing.expectEqual(types.PlayerColour.black, board.grid[3][4]); // test one example point
+    }
+
+    for (0..8) |index| {
+        try board.playMove(std.testing.allocator, .white, .{ .x = 4, .y = @intCast(index) });
+        try std.testing.expectEqual(types.PlayerColour.black, board.grid[3][4]); // test one example point
+    }
+
+    try board.playMove(std.testing.allocator, .white, .{ .x = 4, .y = 8 });
+    try std.testing.expectEqual(types.PlayerColour.empty, board.grid[3][4]); // test one example point
+
+    try std.testing.expectEqual(9, board.black_stones_captured);
+    try std.testing.expectEqual(0, board.white_stones_captured);
+}
+
+test "one group spans multiple liberties in capture" {
+    const board: *Board = try Board.init(std.testing.allocator, 9);
+    defer board.deinit(std.testing.allocator);
+
+    try board.playMove(std.testing.allocator, .white, .{ .x = 3, .y = 3 });
+    try board.playMove(std.testing.allocator, .white, .{ .x = 3, .y = 4 });
+    try board.playMove(std.testing.allocator, .white, .{ .x = 4, .y = 3 });
+
+    try board.playMove(std.testing.allocator, .black, .{ .x = 3, .y = 2 });
+    try board.playMove(std.testing.allocator, .black, .{ .x = 4, .y = 2 });
+    try board.playMove(std.testing.allocator, .black, .{ .x = 5, .y = 3 });
+    try board.playMove(std.testing.allocator, .black, .{ .x = 2, .y = 3 });
+    try board.playMove(std.testing.allocator, .black, .{ .x = 2, .y = 4 });
+    try board.playMove(std.testing.allocator, .black, .{ .x = 3, .y = 5 });
+
+    try std.testing.expectEqual(types.PlayerColour.white, board.grid[3][3]);
+    try board.playMove(std.testing.allocator, .black, .{ .x = 4, .y = 4 });
+    try std.testing.expectEqual(types.PlayerColour.empty, board.grid[3][3]);
+
+    try std.testing.expectEqual(0, board.black_stones_captured);
+    try std.testing.expectEqual(3, board.white_stones_captured);
 }
