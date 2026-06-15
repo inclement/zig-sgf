@@ -3,6 +3,8 @@ const std = @import("std");
 const parseRaw = @import("parse_raw.zig");
 const types = @import("types.zig");
 
+const default_board_size: u32 = 19; // defined in SGF spec
+
 pub const SgfError = error{
     NodeAlreadyHasParent,
     NodeHasNoParent,
@@ -223,6 +225,24 @@ pub const SgfNode = struct {
         }
 
         return null;
+    }
+
+    pub fn rootNode(this: *SgfNode) *SgfNode {
+        var cur_node: *SgfNode = this;
+        while (!cur_node.isRootNode()) {
+            cur_node = cur_node.parent.?;
+        }
+        return cur_node;
+    }
+
+    /// Find the board size declaration at the root of the tree and return the board size
+    pub fn readBoardSize(this: *SgfNode) !u32 {
+        const root_node: *SgfNode = this.rootNode();
+        // TODO support width+height declarations, limit size to 52
+        if (root_node.readProperty("SZ")) |size| {
+            return try std.fmt.parseInt(u32, size.items[0], 10);
+        }
+        return default_board_size;
     }
 
     pub fn addChild(this: *SgfNode, allocator: std.mem.Allocator, child: *SgfNode) !void {
@@ -579,4 +599,22 @@ test "next / previous" {
 
     try std.testing.expectEqual(node_1, node_2.previous());
     try std.testing.expectEqual(null, node_2.next());
+}
+
+test "board size" {
+    const root_node = try parseSgfStringFirstGameTree(std.testing.allocator, "(;SZ[6]W[ff];B[ab];W[cd])");
+    defer root_node.deinitTree(std.testing.allocator);
+
+    try std.testing.expectEqual(6, try root_node.readBoardSize());
+    try std.testing.expectEqual(6, try root_node.next().?.readBoardSize());
+    try std.testing.expectEqual(6, try root_node.next().?.next().?.readBoardSize());
+}
+
+test "default board size" {
+    const root_node = try parseSgfStringFirstGameTree(std.testing.allocator, "(;W[ff];B[ab];W[cd])");
+    defer root_node.deinitTree(std.testing.allocator);
+
+    try std.testing.expectEqual(default_board_size, try root_node.readBoardSize());
+    try std.testing.expectEqual(default_board_size, try root_node.next().?.readBoardSize());
+    try std.testing.expectEqual(default_board_size, try root_node.next().?.next().?.readBoardSize());
 }
